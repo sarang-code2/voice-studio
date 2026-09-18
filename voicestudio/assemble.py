@@ -123,6 +123,24 @@ def assemble_from_clips(
         "-c", "copy", str(silent_video),
     ])
 
+    # Each clip's frame count is floor(duration_s * fps), so every clip's
+    # video is very slightly shorter than its narration audio; that drift
+    # accumulates across segments. Muxing with -shortest would then trim
+    # the *audio* down to the (slightly shorter) video -- silently clipping
+    # the tail of the last segment's narration. Pad the video out to match
+    # instead, by freezing its last frame, so no narration gets cut.
+    video_duration = _probe_duration(silent_video)
+    narration_duration = _probe_duration(narration_path)
+    if video_duration < narration_duration:
+        pad_s = narration_duration - video_duration
+        padded_video = out_dir / "_silent_padded.mp4"
+        _run([
+            "ffmpeg", "-y", "-i", str(silent_video),
+            "-vf", f"tpad=stop_mode=clone:stop_duration={pad_s}",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p", str(padded_video),
+        ])
+        silent_video = padded_video
+
     final_path = out_dir / "final.mp4"
     _run([
         "ffmpeg", "-y",

@@ -10,6 +10,7 @@ Two ways to get the screen capture:
   recording to match the narration.
 """
 
+import json
 from pathlib import Path
 
 from . import assemble, capture, captions, publish, script_gen, voice
@@ -34,6 +35,10 @@ def run(
     print(f"[1/5] Generating script for: {topic!r} ({video_format})")
     script = script_gen.generate_script(topic, config, video_format)
     print(f"       title: {script['title']}  ({len(script['segments'])} segments)")
+    script_path = config.output_dir / "script.json"
+    config.output_dir.mkdir(parents=True, exist_ok=True)
+    script_path.write_text(json.dumps(script, indent=2))
+    print(f"       script written to {script_path}")
 
     audio_dir = config.output_dir / "audio"
     print("[2/5] Cloning narration")
