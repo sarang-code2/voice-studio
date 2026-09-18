@@ -23,7 +23,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw
 
-from . import visuals
+from . import diagram, visuals
 from .render import DEFAULT_FORMAT, FPS, dimensions, frames_to_video, load_font, wrap_text
 
 PAGE_BG = (12, 12, 15)
@@ -172,6 +172,11 @@ def capture_segments(
         if action_type == "terminal":
             capture_terminal_segment(
                 seg["action_detail"], seg["duration_s"], clip_path, tmp_root, video_format
+            )
+        elif action_type == "concept" and seg.get("diagram_steps"):
+            diagram.concept_diagram_clip(
+                seg["narration"], seg["diagram_steps"], seg["duration_s"], clip_path, tmp_root,
+                video_format=video_format,
             )
         else:
             visuals.title_card_clip(

@@ -22,9 +22,13 @@ DEFAULT_FORMAT = "landscape"
 FPS = 24
 MARGIN = 48
 
-_FONT_PATHS = [
+_MONO_FONT_PATHS = [
     "/System/Library/Fonts/Menlo.ttc",
     "/System/Library/Fonts/Supplemental/Andale Mono.ttf",
+]
+_SANS_FONT_PATHS = [
+    "/System/Library/Fonts/Avenir Next.ttc",
+    "/System/Library/Fonts/HelveticaNeue.ttc",
 ]
 
 
@@ -35,12 +39,24 @@ def dimensions(video_format: str) -> tuple[int, int]:
 
 
 def load_font(size: int) -> ImageFont.FreeTypeFont:
-    for path in _FONT_PATHS:
+    """Monospace -- for rendering an actual terminal (capture.py)."""
+    for path in _MONO_FONT_PATHS:
         try:
             return ImageFont.truetype(path, size)
         except OSError:
             continue
     return ImageFont.load_default()
+
+
+def load_sans_font(size: int) -> ImageFont.FreeTypeFont:
+    """Friendlier proportional font -- for title cards and diagrams, where
+    reading like a terminal isn't the point."""
+    for path in _SANS_FONT_PATHS:
+        try:
+            return ImageFont.truetype(path, size)
+        except OSError:
+            continue
+    return load_font(size)
 
 
 def wrap_text(text: str, font: ImageFont.FreeTypeFont, max_width: int) -> list[str]:

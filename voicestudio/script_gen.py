@@ -45,7 +45,8 @@ shape:
 spoken sentences, no stage directions",
       "action_type": "terminal" | "browser" | "concept" | "note",
       "action_detail": "the exact command to run, or the exact URL/click \
-path to follow, or empty string for 'concept'/'note' segments"
+path to follow, or empty string for 'concept'/'note' segments",
+      "diagram_steps": ["short label", "short label", ...]
     }
   ]
 }
@@ -61,6 +62,13 @@ single throwaway sentence. Add more "concept" segments mid-script wherever \
 a step needs the "why" explained before the "how".
 - Use "note" only for pure framing lines (hook, transition, recap) that \
 don't teach anything by themselves -- "concept" is for actual teaching.
+- For "concept" segments, when the idea is a sequence/flow (most are: \
+input -> processing -> output, or a chain of steps), also fill \
+"diagram_steps" with 2-5 SHORT labels (2-4 words each, not sentences) for \
+an animated box-and-arrow diagram that appears alongside the narration --\
+ e.g. ["Read file extension", "Match to a category", "Create folder", \
+"Move file in"]. Omit or leave empty only when the idea genuinely isn't a \
+sequence. "note"/"terminal"/"browser" segments never need diagram_steps.
 - action_detail for "terminal" must be a literal shell command that can be \
 run as-is. Each terminal segment runs in its own fresh shell subprocess --
 there is no persistent state (cwd, variables) between segments, so never \

@@ -12,7 +12,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw
 
-from .render import DEFAULT_FORMAT, FPS, MARGIN, dimensions, frames_to_video, load_font, wrap_text
+from .render import DEFAULT_FORMAT, FPS, MARGIN, dimensions, frames_to_video, load_sans_font, wrap_text
 
 BG = (16, 16, 20)
 FG = (235, 235, 240)
@@ -42,8 +42,8 @@ def title_card_clip(
     # portrait/reel frames are narrower -- bigger type reads better at
     # phone-scroll speed and fills the frame instead of leaving it sparse
     is_portrait = height > width
-    label_font = load_font(26 if is_portrait else 22)
-    body_font = load_font(40 if is_portrait else 32)
+    label_font = load_sans_font(26 if is_portrait else 22)
+    body_font = load_sans_font(40 if is_portrait else 32)
     content_width = width - 2 * MARGIN - 80
     body_lines = wrap_text(text, body_font, content_width)
 
