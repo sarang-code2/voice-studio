@@ -45,7 +45,7 @@ CONTENT_PADDING = 28
 FONT_SIZE = 21
 LINE_HEIGHT = int(FONT_SIZE * 1.55)
 
-CHARS_PER_SEC = 4  # base pace -- jitter below makes it feel human, not metronomic
+CHARS_PER_SEC = 3  # base pace -- jitter below makes it feel human, not metronomic
 POST_TYPE_PAUSE_S = 0.6
 LINE_REVEAL_S = 0.3
 MIN_OUTPUT_HOLD_S = 2.5  # protected reading time -- typing compression can't eat into this
@@ -113,6 +113,14 @@ def _typing_schedule(command: str, chars_per_sec: float) -> list[int]:
     return [int(round(x)) for x in schedule]
 
 
+def _command_rows(command: str, font, max_width: int) -> list[str]:
+    """Wrap "$ " + command as one string, so the prompt's width is part of
+    the same wrap calculation instead of an indent applied afterward --
+    continuation lines are flush left, same as a real terminal's soft wrap
+    (it doesn't re-indent wrapped text under the prompt either)."""
+    return wrap_text("$ " + command, font, max_width)
+
+
 def capture_terminal_segment(
     command: str, duration_s: float, out_path: Path, tmp_root: Path,
     video_format: str = DEFAULT_FORMAT,
@@ -120,20 +128,17 @@ def capture_terminal_segment(
     frame_dir = tmp_root / f"frames_{out_path.stem}"
     frame_dir.mkdir(parents=True, exist_ok=True)
     width, height = dimensions(video_format)
+    win_x0, win_y0, win_x1, win_y1 = _window_bounds(width, height)
 
     font = load_font(FONT_SIZE)
     title_font = load_font(15)
-    x0, _, x1, _ = _window_bounds(width, height)
-    prompt_width = font.getlength("$ ")
-    # every command line is drawn indented by prompt_width (continuation
-    # lines align under the command text, not under "$ "), so reserve that
-    # width for every line -- otherwise a line wrapped to the full window
-    # width overflows once shifted right by the indent
-    max_width = (x1 - x0) - 2 * CONTENT_PADDING - prompt_width
+    max_width = (win_x1 - win_x0) - 2 * CONTENT_PADDING
+    content_top = win_y0 + TITLEBAR_H
+    max_visible_rows = max(1, int(((win_y1 - CONTENT_PADDING) - (content_top + CONTENT_PADDING)) / LINE_HEIGHT))
 
     output_text = _run_command(command)
     output_lines = wrap_text(output_text, font, max_width) if output_text else []
-    full_command_lines = wrap_text(command, font, max_width)
+    full_command_lines = _command_rows(command, font, max_width)
 
     total_frames = max(int(duration_s * FPS), FPS)
     pause_frames = int(POST_TYPE_PAUSE_S * FPS)
@@ -159,27 +164,28 @@ def capture_terminal_segment(
 
     reveal_frames = min(reveal_frames, max(0, total_frames - type_frames - pause_frames))
 
-    def draw(lines_typed: list[str], cursor_on: bool, output: list[str], idx: int) -> None:
+    def draw(command_rows: list[str], cursor_on: bool, output: list[str], idx: int) -> None:
         img = Image.new("RGB", (width, height), PAGE_BG)
         d = ImageDraw.Draw(img)
         cx0, cy0, cx1, _ = _draw_window_chrome(d, "bash — organize-downloads", title_font, width, height)
 
+        # real terminal behavior: once content exceeds the visible area,
+        # older rows scroll off the top -- keep only what fits
+        all_rows = (command_rows or ["$ "]) + list(output)
+        visible_rows = all_rows[-max_visible_rows:]
+        is_first_row_visible = len(all_rows) <= max_visible_rows
+
         x = cx0 + CONTENT_PADDING
         y = cy0 + CONTENT_PADDING
-        prompt_width = font.getlength("$ ")
-        lines_typed = lines_typed or [""]
-
-        for li, line in enumerate(lines_typed):
-            if li == 0:
+        for ri, row in enumerate(visible_rows):
+            if ri == 0 and is_first_row_visible and row.startswith("$ "):
                 d.text((x, y), "$ ", font=font, fill=PROMPT_COLOR)
-            d.text((x + prompt_width, y), line, font=font, fill=TEXT_FG)
-            if cursor_on and li == len(lines_typed) - 1:
-                cursor_x = x + prompt_width + font.getlength(line) + 2
+                d.text((x + font.getlength("$ "), y), row[2:], font=font, fill=TEXT_FG)
+            else:
+                d.text((x, y), row, font=font, fill=TEXT_FG)
+            if cursor_on and ri == len(visible_rows) - 1:
+                cursor_x = x + font.getlength(row) + 2
                 d.rectangle([cursor_x, y + 2, cursor_x + 10, y + FONT_SIZE + 2], fill=CURSOR_COLOR)
-            y += LINE_HEIGHT
-
-        for line in output:
-            d.text((x, y), line, font=font, fill=TEXT_FG)
             y += LINE_HEIGHT
 
         img.save(frame_dir / f"{idx:05d}.png")
@@ -190,8 +196,8 @@ def capture_terminal_segment(
         while n_chars < len(schedule) and schedule[n_chars] <= i:
             n_chars += 1
         cursor_on = (i // 6) % 2 == 0
-        lines_typed = wrap_text(command[:n_chars], font, max_width) if n_chars else [""]
-        draw(lines_typed, cursor_on, [], idx)
+        command_rows = _command_rows(command[:n_chars], font, max_width)
+        draw(command_rows, cursor_on, [], idx)
         idx += 1
     for i in range(pause_frames):
         cursor_on = (i // 6) % 2 == 0
