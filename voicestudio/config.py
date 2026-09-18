@@ -14,6 +14,7 @@ class Config:
     anthropic_api_key: str
     voice_reference_path: Path
     tts_device: str
+    llm_backend: str = "anthropic"
     output_dir: Path = ROOT / "output"
     recordings_dir: Path = ROOT / "recordings"
 
@@ -34,4 +35,5 @@ def load_config() -> Config:
             "VOICE_REFERENCE_PATH", "assets/voice_reference/sample.wav"
         ),
         tts_device=os.environ.get("TTS_DEVICE", "mps"),
+        llm_backend=os.environ.get("LLM_BACKEND", "anthropic"),
     )
