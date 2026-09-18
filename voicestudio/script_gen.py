@@ -132,15 +132,13 @@ def _generate_with_anthropic(topic: str, config: Config, system_prompt: str) -> 
     return _extract_json(raw)
 
 
-def _generate_with_ollama(topic: str, system_prompt: str) -> dict:
+def _call_ollama(messages: list[dict]) -> dict:
     payload = {
         "model": OLLAMA_MODEL,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"Topic: {topic}"},
-        ],
+        "messages": messages,
         "stream": False,
         "format": "json",
+        "options": {"num_predict": 4096},  # small models can otherwise stop early on a long schema
     }
     req = urllib.request.Request(
         f"{OLLAMA_HOST}/api/chat",
@@ -156,6 +154,31 @@ def _generate_with_ollama(topic: str, system_prompt: str) -> dict:
             f"Is '{OLLAMA_MODEL}' pulled (`ollama pull {OLLAMA_MODEL}`)?"
         ) from e
     return _extract_json(body["message"]["content"])
+
+
+def _generate_with_ollama(topic: str, system_prompt: str) -> dict:
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": f"Topic: {topic}"},
+    ]
+    script = _call_ollama(messages)
+
+    missing = [k for k in ("title", "description", "tags", "segments") if k not in script]
+    if missing:
+        # small local models occasionally drop a top-level key -- one retry
+        # with an explicit nudge before giving up
+        messages.append({"role": "assistant", "content": json.dumps(script)})
+        messages.append({
+            "role": "user",
+            "content": (
+                f"That response was missing required key(s): {', '.join(missing)}. "
+                "Respond again with the COMPLETE JSON object, including all of: "
+                "title, description, tags, segments."
+            ),
+        })
+        script = _call_ollama(messages)
+
+    return script
 
 
 def generate_script(topic: str, config: Config, video_format: str = "landscape") -> dict:
