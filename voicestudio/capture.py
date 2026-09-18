@@ -45,9 +45,10 @@ CONTENT_PADDING = 28
 FONT_SIZE = 21
 LINE_HEIGHT = int(FONT_SIZE * 1.55)
 
-CHARS_PER_SEC = 9  # base pace -- jitter below makes it feel human, not metronomic
+CHARS_PER_SEC = 6  # base pace -- jitter below makes it feel human, not metronomic
 POST_TYPE_PAUSE_S = 0.6
-LINE_REVEAL_S = 0.25
+LINE_REVEAL_S = 0.3
+MIN_OUTPUT_HOLD_S = 2.5  # protected reading time -- typing compression can't eat into this
 
 NOT_YET_AUTOMATED = {"browser", "mobile", "desktop"}
 
@@ -127,19 +128,24 @@ def capture_terminal_segment(
     full_command_lines = wrap_text(command, font, max_width)
 
     total_frames = max(int(duration_s * FPS), FPS)
+    pause_frames = int(POST_TYPE_PAUSE_S * FPS)
+    reveal_step_frames = max(1, int(LINE_REVEAL_S * FPS))
+    reveal_frames = len(output_lines) * reveal_step_frames
+    min_hold_frames = int(MIN_OUTPUT_HOLD_S * FPS) if output_lines else 0
+
+    # reading time for the output is protected: typing only gets whatever's
+    # left after pause + reveal + the minimum hold, never the other way
+    # around, so a long command compresses its typing before it ever eats
+    # into time to read the result
+    type_budget = max(1, total_frames - pause_frames - reveal_frames - min_hold_frames)
     schedule = _typing_schedule(command, CHARS_PER_SEC)
     natural_type_frames = max(1, schedule[-1] if schedule else 1)
-    pause_frames = int(POST_TYPE_PAUSE_S * FPS)
-    type_budget = max(1, int(total_frames * 0.8) - pause_frames)
     if natural_type_frames > type_budget:
-        # too slow for the segment's duration -- compress uniformly rather
-        # than truncating the command or overrunning the clip
         scale = type_budget / natural_type_frames
         schedule = [int(round(f * scale)) for f in schedule]
     type_frames = schedule[-1] + 1 if schedule else 1
 
-    reveal_step_frames = max(1, int(LINE_REVEAL_S * FPS))
-    reveal_frames = min(len(output_lines) * reveal_step_frames, max(0, total_frames - type_frames - pause_frames))
+    reveal_frames = min(reveal_frames, max(0, total_frames - type_frames - pause_frames))
 
     def draw(lines_typed: list[str], cursor_on: bool, output: list[str], idx: int) -> None:
         img = Image.new("RGB", (width, height), PAGE_BG)
