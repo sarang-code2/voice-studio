@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+
+# generated artifacts
+output/
+recordings/*
+!recordings/.gitkeep
+
+# secrets
+assets/voice_reference/*
+!assets/voice_reference/.gitkeep
+client_secret*.json
+token.json

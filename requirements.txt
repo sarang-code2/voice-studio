@@ -1,0 +1,6 @@
+chatterbox-tts
+anthropic
+google-api-python-client
+google-auth-oauthlib
+faster-whisper
+python-dotenv
