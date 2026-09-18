@@ -49,6 +49,7 @@ def run(
 
     srt_path = config.output_dir / "captions.srt"
     captions.build_srt(segments_result["segments"], srt_path)
+    print(f"       captions written to {srt_path} (not attached to the video -- upload separately if wanted)")
 
     if auto_capture:
         print("[3/5] Capturing screen actions automatically")
@@ -56,13 +57,11 @@ def run(
             segments_result, config.output_dir / "clips", config.output_dir / "_tmp", video_format
         )
         print("[4/5] Assembling video")
-        final_path = assemble.assemble_from_clips(
-            segments_result, clips, config.output_dir, srt_path, video_format
-        )
+        final_path = assemble.assemble_from_clips(segments_result, clips, config.output_dir, video_format)
     else:
         print(f"[3/5] Using your recording: {recording_path}")
         print("[4/5] Assembling video")
-        final_path = assemble.assemble_video(segments_result, recording_path, config.output_dir, srt_path)
+        final_path = assemble.assemble_video(segments_result, recording_path, config.output_dir)
 
     print(f"       -> {final_path}")
 

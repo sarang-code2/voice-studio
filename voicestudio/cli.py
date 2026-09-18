@@ -42,18 +42,17 @@ def cmd_assemble(args):
     out_dir = Path(args.out_dir)
     srt_path = out_dir / "captions.srt"
     captions.build_srt(segments_result["segments"], srt_path)
+    print(f"captions written to {srt_path} (not attached to the video -- upload separately if wanted)")
 
     if args.recording:
-        final_path = assemble.assemble_video(
-            segments_result, Path(args.recording), out_dir, srt_path
-        )
+        final_path = assemble.assemble_video(segments_result, Path(args.recording), out_dir)
     else:
         clips_dir = Path(args.clips_dir) if args.clips_dir else out_dir / "clips"
         clips = [
             {**seg, "clip_path": str(clips_dir / f"{seg['id']:03d}.mp4")}
             for seg in segments_result["segments"]
         ]
-        final_path = assemble.assemble_from_clips(segments_result, clips, out_dir, srt_path, args.format)
+        final_path = assemble.assemble_from_clips(segments_result, clips, out_dir, args.format)
 
     print(f"Wrote {final_path}")
 

@@ -5,9 +5,14 @@ v1 assumption: you recorded the screen actions yourself, roughly following
 the script's pacing, but the recording length won't exactly match the
 generated narration. We retime the (silent) recording to match the
 narration's total duration by uniformly speeding it up or slowing it down,
-then mux the narration audio over it and add captions as a soft subtitle
-track (not burned in -- this Homebrew ffmpeg build has no libass, and a
-toggleable track is arguably nicer for viewers anyway).
+then mux the narration audio over it.
+
+No caption/subtitle track is attached to the video -- a soft mov_text track
+was tried, but some players (QuickTime included) display it automatically
+regardless of the "toggle" intent, which just duplicates the narration as
+on-screen text. `captions.build_srt()` still writes output/captions.srt
+separately, in case you want to upload it to YouTube as an optional caption
+file.
 
 Once the automated capture pipeline (v2) drives + records the actions itself
 timed to each segment's audio, this retiming step goes away.
@@ -61,9 +66,7 @@ def _build_narration_track(segments: list[dict], sample_rate: int, out_dir: Path
     return narration_path
 
 
-def assemble_video(
-    segments_result: dict, recording_path: Path, out_dir: Path, srt_path: Path
-) -> Path:
+def assemble_video(segments_result: dict, recording_path: Path, out_dir: Path) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
     segments = segments_result["segments"]
     sample_rate = segments_result["sample_rate"]
@@ -78,10 +81,9 @@ def assemble_video(
         "ffmpeg", "-y",
         "-i", str(recording_path),
         "-i", str(narration_path),
-        "-i", str(srt_path),
         "-filter_complex", f"[0:v]setpts=PTS*{speed_factor}[v]",
-        "-map", "[v]", "-map", "1:a", "-map", "2:s",
-        "-c:v", "libx264", "-c:a", "aac", "-c:s", "mov_text",
+        "-map", "[v]", "-map", "1:a",
+        "-c:v", "libx264", "-c:a", "aac",
         "-shortest",
         str(final_path),
     ])
@@ -89,7 +91,7 @@ def assemble_video(
 
 
 def assemble_from_clips(
-    segments_result: dict, clips: list[dict], out_dir: Path, srt_path: Path,
+    segments_result: dict, clips: list[dict], out_dir: Path,
     video_format: str = DEFAULT_FORMAT,
 ) -> Path:
     """v2 assembly: each segment already has its own clip (real terminal
@@ -124,9 +126,9 @@ def assemble_from_clips(
     final_path = out_dir / "final.mp4"
     _run([
         "ffmpeg", "-y",
-        "-i", str(silent_video), "-i", str(narration_path), "-i", str(srt_path),
-        "-map", "0:v", "-map", "1:a", "-map", "2:s",
-        "-c:v", "libx264", "-c:a", "aac", "-c:s", "mov_text",
+        "-i", str(silent_video), "-i", str(narration_path),
+        "-map", "0:v", "-map", "1:a",
+        "-c:v", "libx264", "-c:a", "aac",
         "-shortest",
         str(final_path),
     ])
