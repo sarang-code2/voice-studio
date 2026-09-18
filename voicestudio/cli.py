@@ -8,7 +8,7 @@ from .config import load_config
 
 def cmd_script(args):
     config = load_config()
-    script = script_gen.generate_script(args.topic, config)
+    script = script_gen.generate_script(args.topic, config, args.format)
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(script, indent=2))
@@ -33,7 +33,7 @@ def cmd_capture(args):
             print(f"  [{seg['id']}] {seg['action_detail']}")
     clips_dir = Path(args.out_dir) / "clips"
     tmp_root = Path(args.out_dir) / "_tmp"
-    clips = capture.capture_segments(segments_result, clips_dir, tmp_root)
+    clips = capture.capture_segments(segments_result, clips_dir, tmp_root, args.format)
     print(f"Wrote {len(clips)} clips to {clips_dir}")
 
 
@@ -53,7 +53,7 @@ def cmd_assemble(args):
             {**seg, "clip_path": str(clips_dir / f"{seg['id']:03d}.mp4")}
             for seg in segments_result["segments"]
         ]
-        final_path = assemble.assemble_from_clips(segments_result, clips, out_dir, srt_path)
+        final_path = assemble.assemble_from_clips(segments_result, clips, out_dir, srt_path, args.format)
 
     print(f"Wrote {final_path}")
 
@@ -71,16 +71,19 @@ def cmd_run(args):
         recording_path=recording_path,
         auto_capture=args.auto_capture,
         upload=not args.no_upload,
+        video_format=args.format,
     )
 
 
 def main():
     parser = argparse.ArgumentParser(prog="voicestudio")
     sub = parser.add_subparsers(required=True)
+    format_help = "landscape (16:9, regular video) or portrait (9:16, Reels/Shorts/TikTok)"
 
     p = sub.add_parser("script", help="generate a tutorial script from a topic")
     p.add_argument("--topic", required=True)
     p.add_argument("--out", default="output/script.json")
+    p.add_argument("--format", default="landscape", choices=["landscape", "portrait"], help=format_help)
     p.set_defaults(func=cmd_script)
 
     p = sub.add_parser("narrate", help="clone narration audio for a script")
@@ -94,6 +97,7 @@ def main():
     )
     p.add_argument("--segments", required=True, help="segments.json from `narrate`")
     p.add_argument("--out-dir", default="output")
+    p.add_argument("--format", default="landscape", choices=["landscape", "portrait"], help=format_help)
     p.set_defaults(func=cmd_capture)
 
     p = sub.add_parser("assemble", help="mux narration + captions onto captured clips or your recording")
@@ -101,6 +105,7 @@ def main():
     p.add_argument("--recording", help="your screen recording (mp4) -- v1 manual path")
     p.add_argument("--clips-dir", help="per-segment clips from `capture` (default: <out-dir>/clips)")
     p.add_argument("--out-dir", default="output")
+    p.add_argument("--format", default="landscape", choices=["landscape", "portrait"], help=format_help)
     p.set_defaults(func=cmd_assemble)
 
     p = sub.add_parser("publish", help="upload a finished video to YouTube (private/unlisted only)")
@@ -114,6 +119,7 @@ def main():
     p.add_argument("--recording", help="your screen recording (mp4) -- v1 manual path")
     p.add_argument("--auto-capture", action="store_true", help="capture segments automatically instead")
     p.add_argument("--no-upload", action="store_true")
+    p.add_argument("--format", default="landscape", choices=["landscape", "portrait"], help=format_help)
     p.set_defaults(func=cmd_run)
 
     args = parser.parse_args()

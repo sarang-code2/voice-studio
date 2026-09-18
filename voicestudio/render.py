@@ -1,6 +1,11 @@
 """Shared frame-rendering helpers used by capture.py (terminal clips) and
 visuals.py (title cards): both draw frames with Pillow and encode them with
-ffmpeg. Plain functions, no shared state between calls."""
+ffmpeg. Plain functions, no shared state between calls.
+
+Two output formats: "landscape" (16:9, regular YouTube) and "portrait"
+(9:16, Shorts/Reels/TikTok). Callers pass a format name and get pixel
+dimensions back -- nothing here is hardcoded to one aspect ratio.
+"""
 
 import shutil
 import subprocess
@@ -8,7 +13,12 @@ from pathlib import Path
 
 from PIL import ImageFont
 
-WIDTH, HEIGHT = 1280, 720
+FORMATS = {
+    "landscape": (1280, 720),
+    "portrait": (1080, 1920),
+}
+DEFAULT_FORMAT = "landscape"
+
 FPS = 24
 MARGIN = 48
 
@@ -16,6 +26,12 @@ _FONT_PATHS = [
     "/System/Library/Fonts/Menlo.ttc",
     "/System/Library/Fonts/Supplemental/Andale Mono.ttf",
 ]
+
+
+def dimensions(video_format: str) -> tuple[int, int]:
+    if video_format not in FORMATS:
+        raise ValueError(f"unknown format {video_format!r}, choose from {list(FORMATS)}")
+    return FORMATS[video_format]
 
 
 def load_font(size: int) -> ImageFont.FreeTypeFont:

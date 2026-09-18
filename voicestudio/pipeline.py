@@ -14,6 +14,8 @@ from pathlib import Path
 
 from . import assemble, capture, captions, publish, script_gen, voice
 from .config import Config, load_config
+from .render import DEFAULT_FORMAT
+from .script_gen import REEL_MAX_SECONDS
 
 
 def run(
@@ -22,19 +24,28 @@ def run(
     auto_capture: bool = False,
     config: Config | None = None,
     upload: bool = True,
+    video_format: str = DEFAULT_FORMAT,
 ) -> Path:
     if bool(recording_path) == bool(auto_capture):
         raise ValueError("pass exactly one of recording_path or auto_capture=True")
 
     config = config or load_config()
 
-    print(f"[1/5] Generating script for: {topic!r}")
-    script = script_gen.generate_script(topic, config)
+    print(f"[1/5] Generating script for: {topic!r} ({video_format})")
+    script = script_gen.generate_script(topic, config, video_format)
     print(f"       title: {script['title']}  ({len(script['segments'])} segments)")
 
     audio_dir = config.output_dir / "audio"
     print("[2/5] Cloning narration")
     segments_result = voice.synthesize_segments(script, config, audio_dir)
+
+    total_narration_s = captions.total_narration_duration(segments_result["segments"])
+    if video_format == "portrait" and total_narration_s > REEL_MAX_SECONDS:
+        print(
+            f"       WARNING: narration is {total_narration_s:.0f}s, over the "
+            f"{REEL_MAX_SECONDS}s reel cap -- topic may be too broad for a reel. "
+            "Continuing anyway; consider a narrower topic and re-running."
+        )
 
     srt_path = config.output_dir / "captions.srt"
     captions.build_srt(segments_result["segments"], srt_path)
@@ -42,10 +53,12 @@ def run(
     if auto_capture:
         print("[3/5] Capturing screen actions automatically")
         clips = capture.capture_segments(
-            segments_result, config.output_dir / "clips", config.output_dir / "_tmp"
+            segments_result, config.output_dir / "clips", config.output_dir / "_tmp", video_format
         )
         print("[4/5] Assembling video")
-        final_path = assemble.assemble_from_clips(segments_result, clips, config.output_dir, srt_path)
+        final_path = assemble.assemble_from_clips(
+            segments_result, clips, config.output_dir, srt_path, video_format
+        )
     else:
         print(f"[3/5] Using your recording: {recording_path}")
         print("[4/5] Assembling video")

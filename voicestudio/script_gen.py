@@ -9,6 +9,19 @@ from anthropic import Anthropic
 from .config import Config
 
 DEFAULT_MODEL = os.environ.get("CLAUDE_MODEL", "claude-sonnet-5")
+REEL_MAX_SECONDS = 60
+
+REEL_ADDENDUM = f"""
+
+This script is for a REEL/SHORT (vertical, phone-scroll format), not a \
+regular video. Hard constraint: total spoken narration across all segments \
+must stay well under {REEL_MAX_SECONDS} seconds -- aim for 40-45 seconds of \
+speech so there's room for pacing. Concretely: 4-6 segments total, each \
+narration line short (one breath, ~2-8 seconds spoken). Pick ONE idea and \
+ONE concrete example -- do not try to cover everything about the topic. \
+Open with a hook in the first segment (no slow windup), keep concept \
+segments tight (one sharp insight, not a lecture), and land a clear payoff \
+before it runs long."""
 
 SYSTEM_PROMPT = """You write scripts for a YouTube tutorial channel about \
 automation. Given a topic, produce a JSON script for a screen-recorded \
@@ -60,15 +73,17 @@ Settings, toggle Dark Mode").
 "note" segment (recap/outro)."""
 
 
-def generate_script(topic: str, config: Config) -> dict:
+def generate_script(topic: str, config: Config, video_format: str = "landscape") -> dict:
     if not config.anthropic_api_key:
         raise RuntimeError("ANTHROPIC_API_KEY is not set (see .env.example)")
+
+    system_prompt = SYSTEM_PROMPT + (REEL_ADDENDUM if video_format == "portrait" else "")
 
     client = Anthropic(api_key=config.anthropic_api_key)
     message = client.messages.create(
         model=DEFAULT_MODEL,
         max_tokens=4096,
-        system=SYSTEM_PROMPT,
+        system=system_prompt,
         messages=[{"role": "user", "content": f"Topic: {topic}"}],
     )
 

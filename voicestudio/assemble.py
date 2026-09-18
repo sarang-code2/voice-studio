@@ -17,8 +17,7 @@ import subprocess
 from pathlib import Path
 
 from . import captions
-from .render import HEIGHT as VIDEO_HEIGHT
-from .render import WIDTH as VIDEO_WIDTH
+from .render import DEFAULT_FORMAT, dimensions
 
 GAP_S = captions.GAP_S
 
@@ -90,12 +89,14 @@ def assemble_video(
 
 
 def assemble_from_clips(
-    segments_result: dict, clips: list[dict], out_dir: Path, srt_path: Path
+    segments_result: dict, clips: list[dict], out_dir: Path, srt_path: Path,
+    video_format: str = DEFAULT_FORMAT,
 ) -> Path:
     """v2 assembly: each segment already has its own clip (real terminal
     capture or a title card) whose duration exactly matches its narration
     segment, so this is a straight concat -- no retiming heuristic needed."""
     out_dir.mkdir(parents=True, exist_ok=True)
+    video_width, video_height = dimensions(video_format)
     sample_rate = segments_result["sample_rate"]
     narration_path = _build_narration_track(segments_result["segments"], sample_rate, out_dir)
 
@@ -108,8 +109,8 @@ def assemble_from_clips(
             _run([
                 "ffmpeg", "-y", "-i", clip["clip_path"],
                 "-vf",
-                f"scale={VIDEO_WIDTH}:{VIDEO_HEIGHT}:force_original_aspect_ratio=decrease,"
-                f"pad={VIDEO_WIDTH}:{VIDEO_HEIGHT}:(ow-iw)/2:(oh-ih)/2",
+                f"scale={video_width}:{video_height}:force_original_aspect_ratio=decrease,"
+                f"pad={video_width}:{video_height}:(ow-iw)/2:(oh-ih)/2",
                 "-r", "24", "-an", "-c:v", "libx264", "-pix_fmt", "yuv420p", str(norm_path),
             ])
             f.write(f"file '{norm_path.resolve()}'\n")
