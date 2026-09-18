@@ -18,6 +18,7 @@ Segments the automated backends don't cover yet ("browser", "mobile",
 complete video end to end; see README for what's next.
 """
 
+import random
 import subprocess
 from pathlib import Path
 
@@ -44,8 +45,8 @@ CONTENT_PADDING = 28
 FONT_SIZE = 21
 LINE_HEIGHT = int(FONT_SIZE * 1.55)
 
-CHARS_PER_SEC = 16  # natural-ish fast-typist pace, not instant
-POST_TYPE_PAUSE_S = 0.5
+CHARS_PER_SEC = 9  # base pace -- jitter below makes it feel human, not metronomic
+POST_TYPE_PAUSE_S = 0.6
 LINE_REVEAL_S = 0.25
 
 NOT_YET_AUTOMATED = {"browser", "mobile", "desktop"}
@@ -91,6 +92,23 @@ def _draw_window_chrome(
     return x0, y0 + TITLEBAR_H, x1, y1
 
 
+def _typing_schedule(command: str, chars_per_sec: float) -> list[int]:
+    """Frame index at which each character becomes visible. Jittered
+    per-character speed plus occasional pauses after spaces, so it reads as
+    someone typing, not a metronome. Seeded on the command so it's
+    reproducible if you regenerate the same clip."""
+    rng = random.Random(hash(command) & 0xFFFFFFFF)
+    base = FPS / chars_per_sec
+    t = 0.0
+    schedule = []
+    for ch in command:
+        t += base * rng.uniform(0.55, 1.7)
+        if ch == " " and rng.random() < 0.25:
+            t += base * rng.uniform(1.5, 3.5)  # brief "thinking" pause
+        schedule.append(t)
+    return [int(round(x)) for x in schedule]
+
+
 def capture_terminal_segment(
     command: str, duration_s: float, out_path: Path, tmp_root: Path,
     video_format: str = DEFAULT_FORMAT,
@@ -106,18 +124,24 @@ def capture_terminal_segment(
 
     output_text = _run_command(command)
     output_lines = wrap_text(output_text, font, max_width) if output_text else []
+    full_command_lines = wrap_text(command, font, max_width)
 
     total_frames = max(int(duration_s * FPS), FPS)
-    frames_per_char = FPS / CHARS_PER_SEC
-    natural_type_frames = max(1, int(len(command) * frames_per_char))
+    schedule = _typing_schedule(command, CHARS_PER_SEC)
+    natural_type_frames = max(1, schedule[-1] if schedule else 1)
     pause_frames = int(POST_TYPE_PAUSE_S * FPS)
-    type_budget = int(total_frames * 0.8)
-    type_frames = min(natural_type_frames, max(1, type_budget - pause_frames))
+    type_budget = max(1, int(total_frames * 0.8) - pause_frames)
+    if natural_type_frames > type_budget:
+        # too slow for the segment's duration -- compress uniformly rather
+        # than truncating the command or overrunning the clip
+        scale = type_budget / natural_type_frames
+        schedule = [int(round(f * scale)) for f in schedule]
+    type_frames = schedule[-1] + 1 if schedule else 1
 
     reveal_step_frames = max(1, int(LINE_REVEAL_S * FPS))
     reveal_frames = min(len(output_lines) * reveal_step_frames, max(0, total_frames - type_frames - pause_frames))
 
-    def draw(command_text: str, cursor_on: bool, lines: list[str], idx: int) -> None:
+    def draw(lines_typed: list[str], cursor_on: bool, output: list[str], idx: int) -> None:
         img = Image.new("RGB", (width, height), PAGE_BG)
         d = ImageDraw.Draw(img)
         cx0, cy0, cx1, _ = _draw_window_chrome(d, "bash — organize-downloads", title_font, width, height)
@@ -125,13 +149,18 @@ def capture_terminal_segment(
         x = cx0 + CONTENT_PADDING
         y = cy0 + CONTENT_PADDING
         prompt_width = font.getlength("$ ")
-        d.text((x, y), "$ ", font=font, fill=PROMPT_COLOR)
-        d.text((x + prompt_width, y), command_text, font=font, fill=TEXT_FG)
-        if cursor_on:
-            cursor_x = x + prompt_width + font.getlength(command_text) + 2
-            d.rectangle([cursor_x, y + 2, cursor_x + 10, y + FONT_SIZE + 2], fill=CURSOR_COLOR)
-        y += LINE_HEIGHT
-        for line in lines:
+        lines_typed = lines_typed or [""]
+
+        for li, line in enumerate(lines_typed):
+            if li == 0:
+                d.text((x, y), "$ ", font=font, fill=PROMPT_COLOR)
+            d.text((x + prompt_width, y), line, font=font, fill=TEXT_FG)
+            if cursor_on and li == len(lines_typed) - 1:
+                cursor_x = x + prompt_width + font.getlength(line) + 2
+                d.rectangle([cursor_x, y + 2, cursor_x + 10, y + FONT_SIZE + 2], fill=CURSOR_COLOR)
+            y += LINE_HEIGHT
+
+        for line in output:
             d.text((x, y), line, font=font, fill=TEXT_FG)
             y += LINE_HEIGHT
 
@@ -139,20 +168,23 @@ def capture_terminal_segment(
 
     idx = 0
     for i in range(type_frames):
-        n_chars = max(1, int(len(command) * (i + 1) / type_frames))
+        n_chars = 0
+        while n_chars < len(schedule) and schedule[n_chars] <= i:
+            n_chars += 1
         cursor_on = (i // 6) % 2 == 0
-        draw(command[:n_chars], cursor_on, [], idx)
+        lines_typed = wrap_text(command[:n_chars], font, max_width) if n_chars else [""]
+        draw(lines_typed, cursor_on, [], idx)
         idx += 1
     for i in range(pause_frames):
         cursor_on = (i // 6) % 2 == 0
-        draw(command, cursor_on, [], idx)
+        draw(full_command_lines, cursor_on, [], idx)
         idx += 1
     for i in range(reveal_frames):
         n_lines = max(1, int(len(output_lines) * (i + 1) / reveal_frames)) if reveal_frames else 0
-        draw(command, False, output_lines[:n_lines], idx)
+        draw(full_command_lines, False, output_lines[:n_lines], idx)
         idx += 1
     while idx < total_frames:
-        draw(command, False, output_lines, idx)
+        draw(full_command_lines, False, output_lines, idx)
         idx += 1
 
     return frames_to_video(frame_dir, out_path)

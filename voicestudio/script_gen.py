@@ -74,6 +74,14 @@ run as-is. Each terminal segment runs in its own fresh shell subprocess --
 there is no persistent state (cwd, variables) between segments, so never \
 rely on a "cd" from an earlier segment; use absolute paths, or chain with \
 "&&" within a single action_detail.
+- The video shows the command being typed out at a natural pace (~9 \
+characters/second) before its output appears, and the clip's length is set \
+by how long the narration takes to speak -- so narration that's too short \
+for a long/complex command makes the typing look rushed. As a rough guide, \
+for "terminal" segments make sure narration takes at least as long to \
+speak as the command takes to type (command length in characters / 9 \
+seconds); narrate what the command is about to do, not just "let's run \
+this," to naturally fill that time.
 - action_detail for "browser" must be a literal URL or a short imperative \
 description of the click/type steps (e.g. "open https://x.com, click \
 Settings, toggle Dark Mode").
