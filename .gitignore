@@ -7,6 +7,7 @@ __pycache__/
 output/
 recordings/*
 !recordings/.gitkeep
+demo_workspace/
 
 # secrets
 assets/voice_reference/*

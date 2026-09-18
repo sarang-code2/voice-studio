@@ -5,7 +5,9 @@ v1 assumption: you recorded the screen actions yourself, roughly following
 the script's pacing, but the recording length won't exactly match the
 generated narration. We retime the (silent) recording to match the
 narration's total duration by uniformly speeding it up or slowing it down,
-then mux the narration audio over it and burn in captions.
+then mux the narration audio over it and add captions as a soft subtitle
+track (not burned in -- this Homebrew ffmpeg build has no libass, and a
+toggleable track is arguably nicer for viewers anyway).
 
 Once the automated capture pipeline (v2) drives + records the actions itself
 timed to each segment's audio, this retiming step goes away.
@@ -15,6 +17,8 @@ import subprocess
 from pathlib import Path
 
 from . import captions
+from .render import HEIGHT as VIDEO_HEIGHT
+from .render import WIDTH as VIDEO_WIDTH
 
 GAP_S = captions.GAP_S
 
@@ -58,11 +62,6 @@ def _build_narration_track(segments: list[dict], sample_rate: int, out_dir: Path
     return narration_path
 
 
-def _escape_for_filter(path: Path) -> str:
-    # ffmpeg filter arguments treat : and ' specially.
-    return str(path).replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'")
-
-
 def assemble_video(
     segments_result: dict, recording_path: Path, out_dir: Path, srt_path: Path
 ) -> Path:
@@ -76,15 +75,58 @@ def assemble_video(
     speed_factor = narration_duration / video_duration
 
     final_path = out_dir / "final.mp4"
-    srt_arg = _escape_for_filter(srt_path)
     _run([
         "ffmpeg", "-y",
         "-i", str(recording_path),
         "-i", str(narration_path),
-        "-filter_complex",
-        f"[0:v]setpts=PTS*{speed_factor},subtitles='{srt_arg}'[v]",
-        "-map", "[v]", "-map", "1:a",
-        "-c:v", "libx264", "-c:a", "aac", "-shortest",
+        "-i", str(srt_path),
+        "-filter_complex", f"[0:v]setpts=PTS*{speed_factor}[v]",
+        "-map", "[v]", "-map", "1:a", "-map", "2:s",
+        "-c:v", "libx264", "-c:a", "aac", "-c:s", "mov_text",
+        "-shortest",
+        str(final_path),
+    ])
+    return final_path
+
+
+def assemble_from_clips(
+    segments_result: dict, clips: list[dict], out_dir: Path, srt_path: Path
+) -> Path:
+    """v2 assembly: each segment already has its own clip (real terminal
+    capture or a title card) whose duration exactly matches its narration
+    segment, so this is a straight concat -- no retiming heuristic needed."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    sample_rate = segments_result["sample_rate"]
+    narration_path = _build_narration_track(segments_result["segments"], sample_rate, out_dir)
+
+    norm_dir = out_dir / "_norm_clips"
+    norm_dir.mkdir(parents=True, exist_ok=True)
+    concat_list = out_dir / "_clips_concat.txt"
+    with open(concat_list, "w") as f:
+        for i, clip in enumerate(clips):
+            norm_path = norm_dir / f"{i:05d}.mp4"
+            _run([
+                "ffmpeg", "-y", "-i", clip["clip_path"],
+                "-vf",
+                f"scale={VIDEO_WIDTH}:{VIDEO_HEIGHT}:force_original_aspect_ratio=decrease,"
+                f"pad={VIDEO_WIDTH}:{VIDEO_HEIGHT}:(ow-iw)/2:(oh-ih)/2",
+                "-r", "24", "-an", "-c:v", "libx264", "-pix_fmt", "yuv420p", str(norm_path),
+            ])
+            f.write(f"file '{norm_path.resolve()}'\n")
+
+    silent_video = out_dir / "_silent.mp4"
+    _run([
+        "ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(concat_list),
+        "-c", "copy", str(silent_video),
+    ])
+
+    final_path = out_dir / "final.mp4"
+    _run([
+        "ffmpeg", "-y",
+        "-i", str(silent_video), "-i", str(narration_path), "-i", str(srt_path),
+        "-map", "0:v", "-map", "1:a", "-map", "2:s",
+        "-c:v", "libx264", "-c:a", "aac", "-c:s", "mov_text",
+        "-shortest",
         str(final_path),
     ])
     return final_path

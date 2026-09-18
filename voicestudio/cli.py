@@ -2,7 +2,7 @@ import argparse
 import json
 from pathlib import Path
 
-from . import assemble, captions, pipeline, publish, script_gen, voice
+from . import assemble, capture, captions, pipeline, publish, script_gen, voice
 from .config import load_config
 
 
@@ -22,14 +22,39 @@ def cmd_narrate(args):
     print(f"Wrote {args.out_dir}/segments.json  ({len(result['segments'])} clips)")
 
 
+def cmd_capture(args):
+    segments_result = json.loads(Path(args.segments).read_text())
+    print(
+        "About to actually run every 'terminal' segment's command on this machine. "
+        "Commands:"
+    )
+    for seg in segments_result["segments"]:
+        if seg["action_type"] == "terminal":
+            print(f"  [{seg['id']}] {seg['action_detail']}")
+    clips_dir = Path(args.out_dir) / "clips"
+    tmp_root = Path(args.out_dir) / "_tmp"
+    clips = capture.capture_segments(segments_result, clips_dir, tmp_root)
+    print(f"Wrote {len(clips)} clips to {clips_dir}")
+
+
 def cmd_assemble(args):
     segments_result = json.loads(Path(args.segments).read_text())
     out_dir = Path(args.out_dir)
     srt_path = out_dir / "captions.srt"
     captions.build_srt(segments_result["segments"], srt_path)
-    final_path = assemble.assemble_video(
-        segments_result, Path(args.recording), out_dir, srt_path
-    )
+
+    if args.recording:
+        final_path = assemble.assemble_video(
+            segments_result, Path(args.recording), out_dir, srt_path
+        )
+    else:
+        clips_dir = Path(args.clips_dir) if args.clips_dir else out_dir / "clips"
+        clips = [
+            {**seg, "clip_path": str(clips_dir / f"{seg['id']:03d}.mp4")}
+            for seg in segments_result["segments"]
+        ]
+        final_path = assemble.assemble_from_clips(segments_result, clips, out_dir, srt_path)
+
     print(f"Wrote {final_path}")
 
 
@@ -40,7 +65,13 @@ def cmd_publish(args):
 
 
 def cmd_run(args):
-    pipeline.run(args.topic, Path(args.recording), upload=not args.no_upload)
+    recording_path = Path(args.recording) if args.recording else None
+    pipeline.run(
+        args.topic,
+        recording_path=recording_path,
+        auto_capture=args.auto_capture,
+        upload=not args.no_upload,
+    )
 
 
 def main():
@@ -57,9 +88,18 @@ def main():
     p.add_argument("--out-dir", default="output/audio")
     p.set_defaults(func=cmd_narrate)
 
-    p = sub.add_parser("assemble", help="mux narration + captions onto your screen recording")
+    p = sub.add_parser(
+        "capture",
+        help="automatically capture each segment (real terminal commands; title cards for the rest)",
+    )
     p.add_argument("--segments", required=True, help="segments.json from `narrate`")
-    p.add_argument("--recording", required=True, help="your screen recording (mp4)")
+    p.add_argument("--out-dir", default="output")
+    p.set_defaults(func=cmd_capture)
+
+    p = sub.add_parser("assemble", help="mux narration + captions onto captured clips or your recording")
+    p.add_argument("--segments", required=True, help="segments.json from `narrate`")
+    p.add_argument("--recording", help="your screen recording (mp4) -- v1 manual path")
+    p.add_argument("--clips-dir", help="per-segment clips from `capture` (default: <out-dir>/clips)")
     p.add_argument("--out-dir", default="output")
     p.set_defaults(func=cmd_assemble)
 
@@ -69,9 +109,10 @@ def main():
     p.add_argument("--privacy", default="private", choices=["private", "unlisted"])
     p.set_defaults(func=cmd_publish)
 
-    p = sub.add_parser("run", help="full v1 pipeline: topic -> script -> voice -> assemble -> upload")
+    p = sub.add_parser("run", help="full pipeline: topic -> script -> voice -> capture -> assemble -> upload")
     p.add_argument("--topic", required=True)
-    p.add_argument("--recording", required=True, help="your screen recording (mp4)")
+    p.add_argument("--recording", help="your screen recording (mp4) -- v1 manual path")
+    p.add_argument("--auto-capture", action="store_true", help="capture segments automatically instead")
     p.add_argument("--no-upload", action="store_true")
     p.set_defaults(func=cmd_run)
 

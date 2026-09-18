@@ -1,38 +1,63 @@
-"""v1 end-to-end orchestration: topic -> script -> cloned narration ->
-(your screen recording) -> assembled video -> private YouTube upload.
+"""End-to-end orchestration: topic -> script -> cloned narration -> capture
+-> assembled video -> private YouTube upload.
 
-v2 will replace the "your screen recording" step with automated,
-segment-timed capture (terminal/browser), removing the manual step below.
+Two ways to get the screen capture:
+- auto_capture=True: "terminal" segments are captured automatically (the
+  command really runs, its real output is rendered); everything else
+  (concept/note segments, and browser/mobile/desktop until those capture
+  backends exist) renders as a title card.
+- recording_path=<your screen recording>: v1 fallback, retimes your manual
+  recording to match the narration.
 """
 
 from pathlib import Path
 
-from . import assemble, captions, publish, script_gen, voice
+from . import assemble, capture, captions, publish, script_gen, voice
 from .config import Config, load_config
 
 
-def run(topic: str, recording_path: Path, config: Config | None = None, upload: bool = True) -> Path:
+def run(
+    topic: str,
+    recording_path: Path | None = None,
+    auto_capture: bool = False,
+    config: Config | None = None,
+    upload: bool = True,
+) -> Path:
+    if bool(recording_path) == bool(auto_capture):
+        raise ValueError("pass exactly one of recording_path or auto_capture=True")
+
     config = config or load_config()
 
-    print(f"[1/4] Generating script for: {topic!r}")
+    print(f"[1/5] Generating script for: {topic!r}")
     script = script_gen.generate_script(topic, config)
     print(f"       title: {script['title']}  ({len(script['segments'])} segments)")
 
     audio_dir = config.output_dir / "audio"
-    print("[2/4] Cloning narration")
+    print("[2/5] Cloning narration")
     segments_result = voice.synthesize_segments(script, config, audio_dir)
 
-    print("[3/4] Assembling video")
     srt_path = config.output_dir / "captions.srt"
     captions.build_srt(segments_result["segments"], srt_path)
-    final_path = assemble.assemble_video(segments_result, recording_path, config.output_dir, srt_path)
+
+    if auto_capture:
+        print("[3/5] Capturing screen actions automatically")
+        clips = capture.capture_segments(
+            segments_result, config.output_dir / "clips", config.output_dir / "_tmp"
+        )
+        print("[4/5] Assembling video")
+        final_path = assemble.assemble_from_clips(segments_result, clips, config.output_dir, srt_path)
+    else:
+        print(f"[3/5] Using your recording: {recording_path}")
+        print("[4/5] Assembling video")
+        final_path = assemble.assemble_video(segments_result, recording_path, config.output_dir, srt_path)
+
     print(f"       -> {final_path}")
 
     if upload:
-        print("[4/4] Uploading to YouTube (private)")
+        print("[5/5] Uploading to YouTube (private)")
         video_id = publish.upload_video(final_path, script, privacy_status="private")
         print(f"       -> https://youtu.be/{video_id}  (private -- review, then publish yourself)")
     else:
-        print("[4/4] Skipped upload (--no-upload)")
+        print("[5/5] Skipped upload (--no-upload)")
 
     return final_path

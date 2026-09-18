@@ -1,3 +1,4 @@
+setuptools<81  # chatterbox's watermarker needs pkg_resources, dropped in newer setuptools
 chatterbox-tts
 anthropic
 google-api-python-client
