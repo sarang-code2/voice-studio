@@ -59,6 +59,24 @@ def load_sans_font(size: int) -> ImageFont.FreeTypeFont:
     return load_font(size)
 
 
+def _hard_break(word: str, font: ImageFont.FreeTypeFont, max_width: int) -> list[str]:
+    """Split a single token with no spaces (a long path, a long URL) into
+    chunks that each fit max_width -- word-wrapping alone leaves these to
+    run off the edge since there's no space to break on."""
+    chunks = []
+    current = ""
+    for ch in word:
+        trial = current + ch
+        if font.getlength(trial) <= max_width or not current:
+            current = trial
+        else:
+            chunks.append(current)
+            current = ch
+    if current:
+        chunks.append(current)
+    return chunks
+
+
 def wrap_text(text: str, font: ImageFont.FreeTypeFont, max_width: int) -> list[str]:
     lines = []
     for raw_line in text.split("\n"):
@@ -70,10 +88,15 @@ def wrap_text(text: str, font: ImageFont.FreeTypeFont, max_width: int) -> list[s
             trial = f"{current} {word}".strip()
             if font.getlength(trial) <= max_width:
                 current = trial
-            else:
-                if current:
-                    lines.append(current)
+                continue
+            if current:
+                lines.append(current)
+                current = ""
+            if font.getlength(word) <= max_width:
                 current = word
+            else:
+                *full_chunks, current = _hard_break(word, font, max_width)
+                lines.extend(full_chunks)
         if current:
             lines.append(current)
     return lines

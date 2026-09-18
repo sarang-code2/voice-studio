@@ -45,10 +45,13 @@ CONTENT_PADDING = 28
 FONT_SIZE = 21
 LINE_HEIGHT = int(FONT_SIZE * 1.55)
 
-CHARS_PER_SEC = 6  # base pace -- jitter below makes it feel human, not metronomic
+CHARS_PER_SEC = 4  # base pace -- jitter below makes it feel human, not metronomic
 POST_TYPE_PAUSE_S = 0.6
 LINE_REVEAL_S = 0.3
 MIN_OUTPUT_HOLD_S = 2.5  # protected reading time -- typing compression can't eat into this
+MIN_TYPE_FRACTION = 0.35  # typing always gets at least this much of the clip, even if that
+                           # means eating into the output-hold minimum -- prevents a long
+                           # command in a short segment from compressing into an instant blur
 
 NOT_YET_AUTOMATED = {"browser", "mobile", "desktop"}
 
@@ -121,7 +124,12 @@ def capture_terminal_segment(
     font = load_font(FONT_SIZE)
     title_font = load_font(15)
     x0, _, x1, _ = _window_bounds(width, height)
-    max_width = (x1 - x0) - 2 * CONTENT_PADDING
+    prompt_width = font.getlength("$ ")
+    # every command line is drawn indented by prompt_width (continuation
+    # lines align under the command text, not under "$ "), so reserve that
+    # width for every line -- otherwise a line wrapped to the full window
+    # width overflows once shifted right by the indent
+    max_width = (x1 - x0) - 2 * CONTENT_PADDING - prompt_width
 
     output_text = _run_command(command)
     output_lines = wrap_text(output_text, font, max_width) if output_text else []
@@ -133,11 +141,15 @@ def capture_terminal_segment(
     reveal_frames = len(output_lines) * reveal_step_frames
     min_hold_frames = int(MIN_OUTPUT_HOLD_S * FPS) if output_lines else 0
 
-    # reading time for the output is protected: typing only gets whatever's
-    # left after pause + reveal + the minimum hold, never the other way
-    # around, so a long command compresses its typing before it ever eats
-    # into time to read the result
-    type_budget = max(1, total_frames - pause_frames - reveal_frames - min_hold_frames)
+    # Reading time for the output is normally protected: typing gets
+    # whatever's left after pause + reveal + the minimum hold. But typing
+    # also gets a floor -- MIN_TYPE_FRACTION of the whole clip -- so a very
+    # long command in a short segment can't compress into an instant blur;
+    # in that case the floor wins and the output hold shrinks instead.
+    available_for_type = max(1, total_frames - pause_frames)
+    type_budget = available_for_type - reveal_frames - min_hold_frames
+    type_budget = max(type_budget, int(total_frames * MIN_TYPE_FRACTION))
+    type_budget = min(type_budget, available_for_type)
     schedule = _typing_schedule(command, CHARS_PER_SEC)
     natural_type_frames = max(1, schedule[-1] if schedule else 1)
     if natural_type_frames > type_budget:

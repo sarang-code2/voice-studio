@@ -79,6 +79,11 @@ an animated box-and-arrow diagram that appears alongside the narration --\
  e.g. ["Read file extension", "Match to a category", "Create folder", \
 "Move file in"]. Omit or leave empty only when the idea genuinely isn't a \
 sequence. "note"/"terminal"/"browser" segments never need diagram_steps.
+- Keep each "terminal" action_detail reasonably short (roughly under 120 \
+characters). A long chain of "&&"-joined setup steps is hard to watch typed \
+out and just as hard to compress into a short clip -- split multi-step \
+setup across 2-3 separate "terminal" segments (each with its own brief \
+narration) rather than one giant one-liner.
 - action_detail for "terminal" must be a literal shell command that can be \
 run as-is. Each terminal segment runs in its own fresh shell subprocess --
 there is no persistent state (cwd, variables) between segments, so never \
